@@ -7,7 +7,7 @@ enum SOODProtocol {
     private static let HEADER = "SOOD"
     private static let VERSION: UInt8 = 2
     private static let QUERY_TYPE: UInt8 = UInt8(ascii: "Q")
-    private static let RESPONSE_TYPE: UInt8 = UInt8(ascii: "X")
+    private static let RESPONSE_TYPE: UInt8 = UInt8(ascii: "R")
 
     // MARK: - Types
 
@@ -34,8 +34,12 @@ enum SOODProtocol {
         buffer.append(VERSION)
         buffer.append(QUERY_TYPE)
 
-        // Properties: _tid=<transactionId>
-        let properties = ["_tid": transactionId]
+        // Properties: query_service_id (required by Roon Core) and _tid
+        // The service ID "00720724-5143-4a9b-abac-0e50cba674bb" identifies Roon Core discovery
+        let properties = [
+            "query_service_id": "00720724-5143-4a9b-abac-0e50cba674bb",
+            "_tid": transactionId
+        ]
 
         for (name, value) in properties {
             encodeProperty(buffer: &buffer, name: name, value: value)

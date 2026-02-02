@@ -31,6 +31,11 @@ public actor RoonConnection {
     /// Pending requests awaiting responses
     private var pendingRequests: [Int: CheckedContinuation<RoonResponse, Error>] = [:]
 
+    /// Tracks pings received while waiting for registration response
+    /// After 2 pings without a register response, we're clearly awaiting authorization
+    private var pingsWhileRegistering: Int = 0
+    private var isWaitingForRegisterResponse: Bool = false
+
     /// Active subscriptions
     private var subscriptions: [Int: AsyncStream<RoonResponse>.Continuation] = [:]
 
@@ -102,19 +107,19 @@ public actor RoonConnection {
 
         updateState(.connecting)
 
-        guard let url = URL(string: "ws://\(host):\(port)/api") else {
+        let urlString = "ws://\(host):\(port)/api"
+        guard let url = URL(string: urlString) else {
             updateState(.failed(.invalidURL))
             throw ConnectionError.invalidURL
         }
 
         transport = transportFactory(url)
+        updateState(.registering)
 
-        // Start receiving messages in a detached task to avoid actor reentrancy issues
+        // Start receiving messages
         receiveTask = Task.detached { [weak self] in
             await self?.receiveLoop()
         }
-
-        updateState(.registering)
 
         // Perform registration handshake
         do {
@@ -126,8 +131,13 @@ public actor RoonConnection {
     }
 
     /// Perform the registration handshake with the Roon Core
+    /// Number of pings to receive before concluding we're awaiting authorization
+    private static let pingsBeforeAuthTimeout = 2
+
     private func performRegistration() async throws {
-        // Debug logging
+        // Reset ping tracking
+        pingsWhileRegistering = 0
+        isWaitingForRegisterResponse = false
 
         // Step 1: Get core info
         let infoResponse = try await send(path: RoonService.path(RoonService.registry, "info"))
@@ -146,6 +156,10 @@ public actor RoonConnection {
             providedServices: [RoonService.ping],  // Must provide ping service
             token: savedToken
         )
+
+        // Mark that we're waiting for register response - ping handler will detect auth wait
+        isWaitingForRegisterResponse = true
+        defer { isWaitingForRegisterResponse = false }
 
         let registerResponse = try await send(
             path: RoonService.path(RoonService.registry, "register"),
@@ -311,7 +325,6 @@ public actor RoonConnection {
             return
         }
 
-
         while !Task.isCancelled {
             do {
                 let message = try await transport.receive()
@@ -355,12 +368,10 @@ public actor RoonConnection {
             try await handleIncomingRequest(incomingRequest)
 
         case .response(let response):
-
             // Check for pending request
             if let continuation = pendingRequests.removeValue(forKey: response.requestId) {
                 continuation.resume(returning: response)
                 return
-            } else {
             }
 
             // Check for subscription
@@ -379,12 +390,28 @@ public actor RoonConnection {
 
     /// Handle incoming requests from Roon (e.g., ping)
     private func handleIncomingRequest(_ request: IncomingRequest) async throws {
-        guard let transport = transport else { return }
+        guard let transport = transport else {
+            return
+        }
 
         // Handle ping service
         if request.service == RoonService.ping && request.name == "ping" {
             let response = try MessageCoding.encodeResponse(requestId: request.requestId, name: "Success")
             try await transport.send(response)
+
+            // Track pings while waiting for registration
+            if isWaitingForRegisterResponse {
+                pingsWhileRegistering += 1
+
+                // After receiving enough pings without a register response,
+                // we know Roon is waiting for user authorization
+                // Update state to notify UI, but keep connection alive
+                if pingsWhileRegistering == Self.pingsBeforeAuthTimeout {
+                    updateState(.awaitingAuthorization)
+                    // Don't cancel the pending request - keep waiting for the actual response
+                    // which will come when the user authorizes in Roon
+                }
+            }
             return
         }
 

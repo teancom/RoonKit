@@ -11,6 +11,9 @@ public enum ConnectionState: Sendable, Equatable {
     /// WebSocket connected, performing registration handshake
     case registering
 
+    /// Connected but waiting for user to authorize extension in Roon settings
+    case awaitingAuthorization
+
     /// Fully connected and registered with Roon Core
     case connected(coreId: String, coreName: String)
 
@@ -58,6 +61,9 @@ public enum ConnectionError: Error, Sendable, Equatable {
 
     /// Maximum reconnection attempts exceeded
     case maxReconnectAttemptsExceeded
+
+    /// Extension needs to be authorized in Roon settings
+    case awaitingAuthorization
 }
 
 extension ConnectionError: LocalizedError {
@@ -78,6 +84,8 @@ extension ConnectionError: LocalizedError {
             return "connection timed out"
         case .maxReconnectAttemptsExceeded:
             return "maximum reconnection attempts exceeded"
+        case .awaitingAuthorization:
+            return "extension awaiting authorization in Roon"
         }
     }
 }

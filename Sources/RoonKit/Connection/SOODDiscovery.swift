@@ -262,9 +262,9 @@ public actor SOODDiscovery {
 
         let host = message.sourceIP ?? sourceIP
 
-        // Extract core info
-        let coreId = message.properties["_corid"]?.flatMap { $0 }
-        let displayName = message.properties["_displayname"]?.flatMap { $0 }
+        // Extract core info (Roon uses "unique_id" and "name" in responses)
+        let coreId = message.properties["unique_id"]?.flatMap { $0 }
+        let displayName = message.properties["name"]?.flatMap { $0 }
         let transactionId = message.properties["_tid"]?.flatMap { $0 } ?? UUID().uuidString
 
         // Get HTTP port (default 9100)
@@ -282,8 +282,6 @@ public actor SOODDiscovery {
             transactionId: transactionId
         )
 
-        if state.addCore(core) {
-            print("Discovered Roon Core: \(core.displayName ?? core.host) at \(core.host):\(core.port)")
-        }
+        _ = state.addCore(core)
     }
 }

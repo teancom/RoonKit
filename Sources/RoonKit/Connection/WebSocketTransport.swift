@@ -29,9 +29,9 @@ public final class URLSessionWebSocketTransport: WebSocketTransport, @unchecked 
     private let task: URLSessionWebSocketTask
     private let session: URLSession
 
-    public init(url: URL, session: URLSession = .shared) {
-        self.session = session
-        self.task = session.webSocketTask(with: url)
+    public init(url: URL, session: URLSession? = nil) {
+        self.session = session ?? URLSession(configuration: .default)
+        self.task = self.session.webSocketTask(with: url)
         task.resume()
     }
 
