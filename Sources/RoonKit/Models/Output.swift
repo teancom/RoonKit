@@ -85,6 +85,8 @@ public struct Output: Sendable, Identifiable, Equatable {
     public let state: PlaybackState
     public let volume: VolumeControl?
     public let sourceControls: [SourceControl]
+    /// IDs of outputs this output can be grouped (synchronized) with
+    public let canGroupWithOutputIds: [String]
 
     public var outputId: String { id }
 
@@ -94,7 +96,8 @@ public struct Output: Sendable, Identifiable, Equatable {
         displayName: String,
         state: PlaybackState = .stopped,
         volume: VolumeControl? = nil,
-        sourceControls: [SourceControl] = []
+        sourceControls: [SourceControl] = [],
+        canGroupWithOutputIds: [String] = []
     ) {
         self.id = id
         self.zoneId = zoneId
@@ -102,6 +105,7 @@ public struct Output: Sendable, Identifiable, Equatable {
         self.state = state
         self.volume = volume
         self.sourceControls = sourceControls
+        self.canGroupWithOutputIds = canGroupWithOutputIds
     }
 
     public init?(from dict: [String: Any]) {
@@ -132,6 +136,12 @@ public struct Output: Sendable, Identifiable, Equatable {
             self.sourceControls = sourceControlsArray.compactMap { SourceControl(from: $0) }
         } else {
             self.sourceControls = []
+        }
+
+        if let groupIds = dict["can_group_with_output_ids"] as? [String] {
+            self.canGroupWithOutputIds = groupIds
+        } else {
+            self.canGroupWithOutputIds = []
         }
     }
 }
