@@ -259,301 +259,159 @@ public actor TransportService {
     }
 
     /// Start playback from a specific item in the queue
-    /// - Parameters:
-    ///   - queueItemId: The queue item ID to start playing from
-    ///   - zoneOrOutputId: Optional zone/output ID (uses selected zone if not specified)
     public func playFromHere(queueItemId: Int, zoneOrOutputId: String? = nil) async throws {
-        let targetId = zoneOrOutputId ?? selectedZoneId
-        guard let targetId = targetId else {
+        guard let targetId = zoneOrOutputId ?? selectedZoneId else {
             throw TransportError.noZoneSelected
         }
+        try await sendCommand("play_from_here", body: [
+            "zone_or_output_id": targetId, "queue_item_id": queueItemId
+        ])
+    }
 
+    // MARK: - Command Helper
+
+    /// Send a transport command and throw on failure.
+    private func sendCommand(_ action: String, body: sending [String: Any]) async throws {
         let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "play_from_here"),
-            body: [
-                "zone_or_output_id": targetId,
-                "queue_item_id": queueItemId
-            ]
+            path: RoonService.path(RoonService.transport, action),
+            body: body
         )
-
         if !response.isSuccess {
             throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
         }
+    }
+
+    /// Send a transport command that requires a selected zone.
+    private func sendZoneCommand(_ action: String, body: [String: Any] = [:]) async throws {
+        guard let zoneId = selectedZoneId else {
+            throw TransportError.noZoneSelected
+        }
+        var fullBody = body
+        fullBody["zone_or_output_id"] = zoneId
+        try await sendCommand(action, body: fullBody)
     }
 
     // MARK: - Playback Controls
 
     /// Play the selected zone
     public func play() async throws {
-        try await control("play")
+        try await sendZoneCommand("control", body: ["control": "play"])
     }
 
     /// Pause the selected zone
     public func pause() async throws {
-        try await control("pause")
+        try await sendZoneCommand("control", body: ["control": "pause"])
     }
 
     /// Toggle play/pause
     public func playPause() async throws {
-        try await control("playpause")
+        try await sendZoneCommand("control", body: ["control": "playpause"])
     }
 
     /// Stop playback
     public func stop() async throws {
-        try await control("stop")
+        try await sendZoneCommand("control", body: ["control": "stop"])
     }
 
     /// Skip to next track
     public func next() async throws {
-        try await control("next")
+        try await sendZoneCommand("control", body: ["control": "next"])
     }
 
     /// Skip to previous track
     public func previous() async throws {
-        try await control("previous")
-    }
-
-    private func control(_ action: String) async throws {
-        guard let zoneId = selectedZoneId else {
-            throw TransportError.noZoneSelected
-        }
-
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "control"),
-            body: [
-                "zone_or_output_id": zoneId,
-                "control": action
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendZoneCommand("control", body: ["control": "previous"])
     }
 
     // MARK: - Volume Control
 
     /// Set absolute volume for an output
     public func setVolume(outputId: String, level: Double) async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "change_volume"),
-            body: [
-                "output_id": outputId,
-                "how": "absolute",
-                "value": level
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("change_volume", body: [
+            "output_id": outputId, "how": "absolute", "value": level
+        ])
     }
 
     /// Adjust volume relatively for an output
     public func adjustVolume(outputId: String, delta: Double) async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "change_volume"),
-            body: [
-                "output_id": outputId,
-                "how": "relative",
-                "value": delta
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("change_volume", body: [
+            "output_id": outputId, "how": "relative", "value": delta
+        ])
     }
 
     /// Step volume up/down for an output
     public func stepVolume(outputId: String, steps: Int) async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "change_volume"),
-            body: [
-                "output_id": outputId,
-                "how": "relative_step",
-                "value": steps
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("change_volume", body: [
+            "output_id": outputId, "how": "relative_step", "value": steps
+        ])
     }
 
     /// Mute an output
     public func mute(outputId: String) async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "mute"),
-            body: [
-                "output_id": outputId,
-                "how": "mute"
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("mute", body: ["output_id": outputId, "how": "mute"])
     }
 
     /// Unmute an output
     public func unmute(outputId: String) async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "mute"),
-            body: [
-                "output_id": outputId,
-                "how": "unmute"
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("mute", body: ["output_id": outputId, "how": "unmute"])
     }
 
     /// Mute all zones that support muting
     public func muteAll() async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "mute_all"),
-            body: ["how": "mute"]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("mute_all", body: ["how": "mute"])
     }
 
     /// Unmute all zones that support muting
     public func unmuteAll() async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "mute_all"),
-            body: ["how": "unmute"]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("mute_all", body: ["how": "unmute"])
     }
 
     /// Pause all zones
     public func pauseAll() async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "pause_all"),
-            body: [:]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("pause_all", body: [:])
     }
 
     // MARK: - Standby Controls
 
     /// Put an output into standby
-    /// - Parameters:
-    ///   - outputId: The output to put into standby
-    ///   - controlKey: Optional control_key to specify which source control to put into standby
     public func standby(outputId: String, controlKey: String? = nil) async throws {
         var body: [String: Any] = ["output_id": outputId]
-        if let controlKey = controlKey {
-            body["control_key"] = controlKey
-        }
-
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "standby"),
-            body: body
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        if let controlKey { body["control_key"] = controlKey }
+        try await sendCommand("standby", body: body)
     }
 
     /// Toggle the standby state of an output
-    /// - Parameters:
-    ///   - outputId: The output to toggle
-    ///   - controlKey: Optional control_key to specify which source control to toggle
     public func toggleStandby(outputId: String, controlKey: String? = nil) async throws {
         var body: [String: Any] = ["output_id": outputId]
-        if let controlKey = controlKey {
-            body["control_key"] = controlKey
-        }
-
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "toggle_standby"),
-            body: body
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        if let controlKey { body["control_key"] = controlKey }
+        try await sendCommand("toggle_standby", body: body)
     }
 
     /// Convenience switch an output, taking it out of standby if needed
-    /// - Parameters:
-    ///   - outputId: The output to convenience switch
-    ///   - controlKey: Optional control_key to specify which source control to switch
     public func convenienceSwitch(outputId: String, controlKey: String? = nil) async throws {
         var body: [String: Any] = ["output_id": outputId]
-        if let controlKey = controlKey {
-            body["control_key"] = controlKey
-        }
-
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "convenience_switch"),
-            body: body
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        if let controlKey { body["control_key"] = controlKey }
+        try await sendCommand("convenience_switch", body: body)
     }
 
     // MARK: - Zone Transfer and Output Grouping
 
     /// Transfer the current queue from one zone to another
-    /// - Parameters:
-    ///   - fromZoneOrOutputId: Source zone or output ID
-    ///   - toZoneOrOutputId: Destination zone or output ID
     public func transferZone(from fromZoneOrOutputId: String, to toZoneOrOutputId: String) async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "transfer_zone"),
-            body: [
-                "from_zone_or_output_id": fromZoneOrOutputId,
-                "to_zone_or_output_id": toZoneOrOutputId
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("transfer_zone", body: [
+            "from_zone_or_output_id": fromZoneOrOutputId,
+            "to_zone_or_output_id": toZoneOrOutputId
+        ])
     }
 
     /// Create a group of synchronized audio outputs
-    /// The first output's zone's queue is preserved.
-    /// - Parameter outputIds: Array of output IDs to group
     public func groupOutputs(_ outputIds: [String]) async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "group_outputs"),
-            body: ["output_ids": outputIds]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("group_outputs", body: ["output_ids": outputIds])
     }
 
     /// Ungroup outputs that were previously grouped
-    /// - Parameter outputIds: Array of output IDs to ungroup
     public func ungroupOutputs(_ outputIds: [String]) async throws {
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "ungroup_outputs"),
-            body: ["output_ids": outputIds]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendCommand("ungroup_outputs", body: ["output_ids": outputIds])
     }
 
     // MARK: - Get Zones and Outputs
@@ -594,42 +452,12 @@ public actor TransportService {
 
     /// Seek to absolute position in seconds
     public func seek(to seconds: Double) async throws {
-        guard let zoneId = selectedZoneId else {
-            throw TransportError.noZoneSelected
-        }
-
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "seek"),
-            body: [
-                "zone_or_output_id": zoneId,
-                "how": "absolute",
-                "seconds": seconds
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendZoneCommand("seek", body: ["how": "absolute", "seconds": seconds])
     }
 
     /// Seek by relative amount in seconds (positive or negative)
     public func seek(by seconds: Double) async throws {
-        guard let zoneId = selectedZoneId else {
-            throw TransportError.noZoneSelected
-        }
-
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "seek"),
-            body: [
-                "zone_or_output_id": zoneId,
-                "how": "relative",
-                "seconds": seconds
-            ]
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        try await sendZoneCommand("seek", body: ["how": "relative", "seconds": seconds])
     }
 
     // MARK: - Settings
@@ -660,30 +488,11 @@ public actor TransportService {
         loop: String? = nil,
         autoRadio: Bool? = nil
     ) async throws {
-        guard let zoneId = selectedZoneId else {
-            throw TransportError.noZoneSelected
-        }
-
-        var body: [String: Any] = ["zone_or_output_id": zoneId]
-
-        if let shuffle = shuffle {
-            body["shuffle"] = shuffle
-        }
-        if let loop = loop {
-            body["loop"] = loop
-        }
-        if let autoRadio = autoRadio {
-            body["auto_radio"] = autoRadio
-        }
-
-        let response = try await connection.send(
-            path: RoonService.path(RoonService.transport, "change_settings"),
-            body: body
-        )
-
-        if !response.isSuccess {
-            throw TransportError.commandFailed(response.errorMessage ?? "unknown error")
-        }
+        var body: [String: Any] = [:]
+        if let shuffle { body["shuffle"] = shuffle }
+        if let loop { body["loop"] = loop }
+        if let autoRadio { body["auto_radio"] = autoRadio }
+        try await sendZoneCommand("change_settings", body: body)
     }
 }
 

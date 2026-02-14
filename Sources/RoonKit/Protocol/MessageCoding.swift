@@ -38,48 +38,14 @@ public enum MessageCoding {
     public static func encode(_ request: RoonRequest) throws -> Data {
         var header = "MOO/1 REQUEST \(request.path)\n"
         header += "Request-Id: \(request.requestId)\n"
-
-        if let body = request.body {
-            let jsonData = try encodeJSON(body)
-            header += "Content-Length: \(jsonData.count)\n"
-            header += "Content-Type: application/json\n"
-            header += "\n"
-
-            guard let headerData = header.data(using: .utf8) else {
-                throw MessageCodingError.invalidFormat("failed to encode header as UTF-8")
-            }
-            return headerData + jsonData
-        } else {
-            header += "\n"
-            guard let headerData = header.data(using: .utf8) else {
-                throw MessageCodingError.invalidFormat("failed to encode header as UTF-8")
-            }
-            return headerData
-        }
+        return try buildMessage(header: header, body: request.body)
     }
 
     /// Encode a COMPLETE response to an incoming request
     public static func encodeResponse(requestId: Int, name: String, body: [String: Any]? = nil) throws -> Data {
         var header = "MOO/1 COMPLETE \(name)\n"
         header += "Request-Id: \(requestId)\n"
-
-        if let body = body {
-            let jsonData = try encodeJSON(body)
-            header += "Content-Length: \(jsonData.count)\n"
-            header += "Content-Type: application/json\n"
-            header += "\n"
-
-            guard let headerData = header.data(using: .utf8) else {
-                throw MessageCodingError.invalidFormat("failed to encode header as UTF-8")
-            }
-            return headerData + jsonData
-        } else {
-            header += "\n"
-            guard let headerData = header.data(using: .utf8) else {
-                throw MessageCodingError.invalidFormat("failed to encode header as UTF-8")
-            }
-            return headerData
-        }
+        return try buildMessage(header: header, body: body)
     }
 
     /// Encode a request into MOO/1 format for sending over WebSocket (legacy string version)
@@ -197,70 +163,36 @@ public enum MessageCoding {
 
     /// Decode a MOO/1 message received from WebSocket (responses only, for backward compatibility)
     public static func decode(_ message: String) throws -> RoonResponse {
-        // Split into header and body sections
-        let parts = message.components(separatedBy: "\n\n")
-        let headerSection = parts[0]
-        let bodySection = parts.count > 1 ? parts.dropFirst().joined(separator: "\n\n") : nil
-
-        // Parse header lines
-        let headerLines = headerSection.components(separatedBy: "\n")
-        guard let firstLine = headerLines.first else {
-            throw MessageCodingError.invalidFormat("empty message")
+        let decoded = try decodeMessage(message)
+        switch decoded {
+        case .response(let response):
+            return response
+        case .request:
+            throw MessageCodingError.invalidVerb("REQUEST")
         }
+    }
 
-        // Parse first line: "MOO/1 VERB Name"
-        let firstLineParts = firstLine.components(separatedBy: " ")
-        guard firstLineParts.count >= 3,
-              firstLineParts[0] == "MOO/1" else {
-            throw MessageCodingError.invalidFormat("invalid first line: \(firstLine)")
-        }
+    // MARK: - Message Building
 
-        guard let verb = MessageVerb(rawValue: firstLineParts[1]) else {
-            throw MessageCodingError.invalidVerb(firstLineParts[1])
-        }
-
-        let name = firstLineParts.dropFirst(2).joined(separator: " ")
-
-        // Parse headers
-        var headers: [String: String] = [:]
-        for line in headerLines.dropFirst() {
-            if let colonIndex = line.firstIndex(of: ":") {
-                let key = String(line[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-                let value = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
-                headers[key] = value
+    /// Build a MOO/1 binary message from a header prefix and optional JSON body.
+    private static func buildMessage(header: String, body: [String: Any]?) throws -> Data {
+        var header = header
+        if let body {
+            let jsonData = try encodeJSON(body)
+            header += "Content-Length: \(jsonData.count)\n"
+            header += "Content-Type: application/json\n"
+            header += "\n"
+            guard let headerData = header.data(using: .utf8) else {
+                throw MessageCodingError.invalidFormat("failed to encode header as UTF-8")
             }
-        }
-
-        // Extract Request-Id
-        guard let requestIdString = headers["Request-Id"] else {
-            throw MessageCodingError.missingRequestId
-        }
-        guard let requestId = Int(requestIdString) else {
-            throw MessageCodingError.invalidRequestId
-        }
-
-        let contentType = headers["Content-Type"]
-
-        // Parse body if present
-        var body: [String: Any]?
-        var rawBody: Data?
-
-        if let bodySection = bodySection, !bodySection.isEmpty {
-            if contentType == "application/json" {
-                body = try decodeJSON(bodySection)
-            } else {
-                rawBody = bodySection.data(using: .utf8)
+            return headerData + jsonData
+        } else {
+            header += "\n"
+            guard let headerData = header.data(using: .utf8) else {
+                throw MessageCodingError.invalidFormat("failed to encode header as UTF-8")
             }
+            return headerData
         }
-
-        return RoonResponse(
-            verb: verb,
-            requestId: requestId,
-            name: name,
-            contentType: contentType,
-            body: body,
-            rawBody: rawBody
-        )
     }
 
     // MARK: - JSON Helpers

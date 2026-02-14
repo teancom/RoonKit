@@ -105,78 +105,8 @@ public actor ImageService {
         self.urlSession = URLSession.shared
     }
 
-    /// Fetch an image by its key
-    /// - Parameters:
-    ///   - imageKey: The image key from Roon API (e.g., from now_playing.image_key)
-    ///   - options: Optional scaling and format options
-    /// - Returns: Image data and content type
-    public func getImage(imageKey: String, options: ImageOptions = .original) async throws -> ImageResult {
-        guard !imageKey.isEmpty else {
-            throw ImageError.invalidImageKey
-        }
-
-        // Validate that if scale is set, dimensions are provided
-        if options.scale != nil && (options.width == nil || options.height == nil) {
-            throw ImageError.missingScaleDimensions
-        }
-
-        // Build URL with query parameters
-        var components = URLComponents()
-        components.scheme = "http"
-        components.host = host
-        components.port = port
-        components.path = "/api/image/\(imageKey)"
-
-        var queryItems: [URLQueryItem] = []
-        if let scale = options.scale {
-            queryItems.append(URLQueryItem(name: "scale", value: scale.rawValue))
-        }
-        if let width = options.width {
-            queryItems.append(URLQueryItem(name: "width", value: String(width)))
-        }
-        if let height = options.height {
-            queryItems.append(URLQueryItem(name: "height", value: String(height)))
-        }
-        if let format = options.format {
-            queryItems.append(URLQueryItem(name: "format", value: format.rawValue))
-        }
-
-        if !queryItems.isEmpty {
-            components.queryItems = queryItems
-        }
-
-        guard let url = components.url else {
-            throw ImageError.invalidImageKey
-        }
-
-        do {
-            let (data, response) = try await urlSession.data(from: url)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw ImageError.invalidResponse
-            }
-
-            guard httpResponse.statusCode == 200 else {
-                throw ImageError.httpError(httpResponse.statusCode)
-            }
-
-            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "image/jpeg"
-
-            return ImageResult(data: data, contentType: contentType)
-        } catch let error as ImageError {
-            throw error
-        } catch {
-            throw ImageError.networkError(error.localizedDescription)
-        }
-    }
-
-    /// Build an image URL without fetching
-    /// Useful for SwiftUI AsyncImage or other image loading frameworks
-    /// - Parameters:
-    ///   - imageKey: The image key from Roon API
-    ///   - options: Optional scaling and format options
-    /// - Returns: URL for the image
-    public func imageURL(imageKey: String, options: ImageOptions = .original) -> URL? {
+    /// Build a Roon image URL from an image key and options.
+    private func buildImageURL(imageKey: String, options: ImageOptions) -> URL? {
         guard !imageKey.isEmpty else { return nil }
 
         var components = URLComponents()
@@ -204,5 +134,44 @@ public actor ImageService {
         }
 
         return components.url
+    }
+
+    /// Fetch an image by its key
+    public func getImage(imageKey: String, options: ImageOptions = .original) async throws -> ImageResult {
+        guard !imageKey.isEmpty else {
+            throw ImageError.invalidImageKey
+        }
+
+        if options.scale != nil && (options.width == nil || options.height == nil) {
+            throw ImageError.missingScaleDimensions
+        }
+
+        guard let url = buildImageURL(imageKey: imageKey, options: options) else {
+            throw ImageError.invalidImageKey
+        }
+
+        do {
+            let (data, response) = try await urlSession.data(from: url)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ImageError.invalidResponse
+            }
+
+            guard httpResponse.statusCode == 200 else {
+                throw ImageError.httpError(httpResponse.statusCode)
+            }
+
+            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "image/jpeg"
+            return ImageResult(data: data, contentType: contentType)
+        } catch let error as ImageError {
+            throw error
+        } catch {
+            throw ImageError.networkError(error.localizedDescription)
+        }
+    }
+
+    /// Build an image URL without fetching (for SwiftUI AsyncImage etc.)
+    public func imageURL(imageKey: String, options: ImageOptions = .original) -> URL? {
+        buildImageURL(imageKey: imageKey, options: options)
     }
 }
