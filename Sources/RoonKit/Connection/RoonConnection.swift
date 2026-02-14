@@ -104,7 +104,7 @@ public actor RoonConnection {
         // Only allow connecting from disconnected or failed states.
         // Bail if already connected, connecting, or reconnecting.
         switch state {
-        case .disconnected, .failed:
+        case .disconnected, .failed, .reconnecting:
             break
         default:
             return
@@ -351,6 +351,13 @@ public actor RoonConnection {
                     continuation.resume(throwing: connectionError)
                 }
                 pendingRequests.removeAll()
+
+                // Finish all subscription streams so consumers (e.g. zone subscriptions)
+                // can detect the disconnection and re-subscribe after reconnection
+                for (_, continuation) in subscriptions {
+                    continuation.finish()
+                }
+                subscriptions.removeAll()
 
                 if !Task.isCancelled {
                     let wasConnected = state.canSendMessages
