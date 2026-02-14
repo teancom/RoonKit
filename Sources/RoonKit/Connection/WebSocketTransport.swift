@@ -24,12 +24,16 @@ public enum WebSocketMessage: Sendable {
     case data(Data)
 }
 
-/// Real WebSocket transport using URLSessionWebSocketTask
+/// Real WebSocket transport using URLSessionWebSocketTask.
+/// Safe as `@unchecked Sendable` because `task` and `session` are immutable (`let`) and
+/// `URLSessionWebSocketTask`'s async methods are internally synchronized.
 public final class URLSessionWebSocketTransport: WebSocketTransport, @unchecked Sendable {
     private let task: URLSessionWebSocketTask
     private let session: URLSession
+    private let ownsSession: Bool
 
     public init(url: URL, session: URLSession? = nil) {
+        self.ownsSession = (session == nil)
         self.session = session ?? URLSession(configuration: .default)
         self.task = self.session.webSocketTask(with: url)
         task.resume()
@@ -69,6 +73,11 @@ public final class URLSessionWebSocketTransport: WebSocketTransport, @unchecked 
 
     public func close(code: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         task.cancel(with: code, reason: reason)
+        // Invalidate self-created sessions to release internal URLSession references.
+        // Skip invalidation for externally-provided sessions (caller owns their lifecycle).
+        if ownsSession {
+            session.invalidateAndCancel()
+        }
     }
 }
 

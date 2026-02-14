@@ -101,7 +101,12 @@ public actor RoonConnection {
 
     /// Connect to the Roon Core
     public func connect() async throws {
-        guard state == .disconnected || state.isConnecting == false else {
+        // Only allow connecting from disconnected or failed states.
+        // Bail if already connected, connecting, or reconnecting.
+        switch state {
+        case .disconnected, .failed:
+            break
+        default:
             return
         }
 
@@ -340,6 +345,13 @@ public actor RoonConnection {
                     try await handleMessage(data)
                 }
             } catch {
+                // Resume all pending request continuations so callers don't hang forever
+                let connectionError = ConnectionError.connectionClosed(code: 1006, reason: error.localizedDescription)
+                for (_, continuation) in pendingRequests {
+                    continuation.resume(throwing: connectionError)
+                }
+                pendingRequests.removeAll()
+
                 if !Task.isCancelled {
                     let wasConnected = state.canSendMessages
                     updateState(.failed(.connectionClosed(code: 1006, reason: error.localizedDescription)))
