@@ -50,7 +50,7 @@ public actor BrowseService {
     ///   - hierarchy: Optional hierarchy to search within (default: general search)
     /// - Returns: Browse result with search results
     public func search(query: String, hierarchy: BrowseHierarchy = .search) async throws -> BrowseResult {
-        return try await browseImpl(hierarchy: hierarchy.rawValue, input: query)
+        return try await browseImpl(hierarchy: hierarchy.rawValue, input: query, popAll: true)
     }
 
     /// Go back one level
