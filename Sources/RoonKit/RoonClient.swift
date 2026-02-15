@@ -50,6 +50,7 @@ public actor RoonClient {
     ///   - displayVersion: Version string shown in Roon
     ///   - publisher: Publisher name
     ///   - email: Contact email
+    ///   - tokenStorage: Storage for authentication tokens (default: UserDefaults-backed)
     public init(
         host: String,
         port: Int = 9100,
@@ -57,7 +58,8 @@ public actor RoonClient {
         displayName: String,
         displayVersion: String,
         publisher: String,
-        email: String
+        email: String,
+        tokenStorage: TokenStorage = UserDefaultsTokenStorage()
     ) {
         self.host = host
         self.port = port
@@ -71,7 +73,8 @@ public actor RoonClient {
         self.connection = RoonConnection(
             host: host,
             port: port,
-            extensionInfo: extensionInfo
+            extensionInfo: extensionInfo,
+            tokenStorage: tokenStorage
         )
     }
 
