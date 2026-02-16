@@ -74,39 +74,42 @@ public actor TransportService {
     }
 
     private func processZoneResponse(_ response: RoonResponse) {
-        guard let event = ZoneEvent.from(response: response) else { return }
+        let events = ZoneEvent.from(response: response)
+        guard !events.isEmpty else { return }
 
-        // Update local zone cache
-        switch event {
-        case .subscribed(let newZones):
-            zones.removeAll()
-            for zone in newZones {
-                zones[zone.id] = zone
+        for event in events {
+            // Update local zone cache
+            switch event {
+            case .subscribed(let newZones):
+                zones.removeAll()
+                for zone in newZones {
+                    zones[zone.id] = zone
+                }
+
+            case .zonesAdded(let newZones):
+                for zone in newZones {
+                    zones[zone.id] = zone
+                }
+
+            case .zonesRemoved(let ids):
+                for id in ids {
+                    zones.removeValue(forKey: id)
+                }
+
+            case .zonesChanged(let updatedZones):
+                for zone in updatedZones {
+                    zones[zone.id] = zone
+                }
+
+            case .zonesSeekChanged:
+                // For seek updates, we don't have full zone data
+                // The consumer should handle these lightweight updates
+                break
             }
 
-        case .zonesAdded(let newZones):
-            for zone in newZones {
-                zones[zone.id] = zone
-            }
-
-        case .zonesRemoved(let ids):
-            for id in ids {
-                zones.removeValue(forKey: id)
-            }
-
-        case .zonesChanged(let updatedZones):
-            for zone in updatedZones {
-                zones[zone.id] = zone
-            }
-
-        case .zonesSeekChanged:
-            // For seek updates, we don't have full zone data
-            // The consumer should handle these lightweight updates
-            break
+            // Emit event
+            zoneEventContinuation?.yield(event)
         }
-
-        // Emit event
-        zoneEventContinuation?.yield(event)
     }
 
     private func handleSubscriptionTermination(key: Int) async {

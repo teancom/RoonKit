@@ -75,9 +75,10 @@ struct ZoneEventTests {
             ]
         )
 
-        let event = ZoneEvent.from(response: response)
+        let events = ZoneEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .subscribed(let zones) = event {
+        if case .subscribed(let zones) = events.first {
             #expect(zones.count == 2)
             #expect(zones[0].id == "z1")
         } else {
@@ -98,9 +99,10 @@ struct ZoneEventTests {
             ]
         )
 
-        let event = ZoneEvent.from(response: response)
+        let events = ZoneEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .zonesChanged(let zones) = event {
+        if case .zonesChanged(let zones) = events.first {
             #expect(zones.count == 1)
             #expect(zones[0].state == .paused)
         } else {
@@ -119,9 +121,10 @@ struct ZoneEventTests {
             ]
         )
 
-        let event = ZoneEvent.from(response: response)
+        let events = ZoneEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .zonesRemoved(let ids) = event {
+        if case .zonesRemoved(let ids) = events.first {
             #expect(ids == ["z1", "z2"])
         } else {
             Issue.record("Expected zonesRemoved event")
@@ -141,13 +144,58 @@ struct ZoneEventTests {
             ]
         )
 
-        let event = ZoneEvent.from(response: response)
+        let events = ZoneEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .zonesSeekChanged(let updates) = event {
+        if case .zonesSeekChanged(let updates) = events.first {
             #expect(updates.count == 1)
             #expect(updates[0].seekPosition == 120.5)
         } else {
             Issue.record("Expected zonesSeekChanged event")
+        }
+    }
+
+    @Test("ZoneEvent parses combined Changed with removed + added + changed")
+    func parsesCombinedChanged() {
+        // Roon sends this after grouping: old zones removed, new zone added,
+        // remaining zones changed — all in a single Changed message.
+        let response = RoonResponse(
+            verb: .continue,
+            requestId: 1,
+            name: "Changed",
+            body: [
+                "zones_removed": ["z1", "z2"],
+                "zones_added": [
+                    ["zone_id": "z3", "display_name": "Group"] as [String: Any]
+                ],
+                "zones_changed": [
+                    ["zone_id": "z4", "display_name": "Other Zone"] as [String: Any]
+                ]
+            ]
+        )
+
+        let events = ZoneEvent.from(response: response)
+        #expect(events.count == 3)
+
+        // Order: removed → added → changed
+        if case .zonesRemoved(let ids) = events[0] {
+            #expect(ids == ["z1", "z2"])
+        } else {
+            Issue.record("Expected zonesRemoved first")
+        }
+
+        if case .zonesAdded(let zones) = events[1] {
+            #expect(zones.count == 1)
+            #expect(zones[0].id == "z3")
+        } else {
+            Issue.record("Expected zonesAdded second")
+        }
+
+        if case .zonesChanged(let zones) = events[2] {
+            #expect(zones.count == 1)
+            #expect(zones[0].id == "z4")
+        } else {
+            Issue.record("Expected zonesChanged third")
         }
     }
 }
