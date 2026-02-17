@@ -106,7 +106,7 @@ public actor ImageService {
     }
 
     /// Build a Roon image URL from an image key and options.
-    private func buildImageURL(imageKey: String, options: ImageOptions) -> URL? {
+    nonisolated private func buildImageURL(imageKey: String, options: ImageOptions) -> URL? {
         guard !imageKey.isEmpty else { return nil }
 
         var components = URLComponents()
@@ -171,7 +171,7 @@ public actor ImageService {
     }
 
     /// Build an image URL without fetching (for SwiftUI AsyncImage etc.)
-    public func imageURL(imageKey: String, options: ImageOptions = .original) -> URL? {
+    nonisolated public func imageURL(imageKey: String, options: ImageOptions = .original) -> URL? {
         buildImageURL(imageKey: imageKey, options: options)
     }
 }
