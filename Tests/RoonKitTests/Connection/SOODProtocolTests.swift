@@ -37,7 +37,7 @@ final class SOODProtocolTests: XCTestCase {
         var data = Data()
         data.append(contentsOf: "SOOD".utf8)
         data.append(2)  // Version
-        data.append(UInt8(ascii: "X"))  // Response type
+        data.append(UInt8(ascii: "R"))  // Response type
 
         // Add a simple property: _corid = "abc123"
         let propName = "_corid"
@@ -78,7 +78,7 @@ final class SOODProtocolTests: XCTestCase {
         var data = Data()
         data.append(contentsOf: "SOOD".utf8)
         data.append(2)
-        data.append(UInt8(ascii: "X"))
+        data.append(UInt8(ascii: "R"))
 
         // Property 1: _corid = "core123"
         data.append(UInt8("_corid".count))
@@ -105,7 +105,7 @@ final class SOODProtocolTests: XCTestCase {
         var data = Data()
         data.append(contentsOf: "SOOD".utf8)
         data.append(2)
-        data.append(UInt8(ascii: "X"))
+        data.append(UInt8(ascii: "R"))
 
         // _replyaddr should override sourceIP
         let propName = "_replyaddr"
@@ -126,7 +126,7 @@ final class SOODProtocolTests: XCTestCase {
         var data = Data()
         data.append(contentsOf: "SOOD".utf8)
         data.append(2)
-        data.append(UInt8(ascii: "X"))
+        data.append(UInt8(ascii: "R"))
 
         // _replyport should override sourcePort
         let propName = "_replyport"
@@ -147,7 +147,7 @@ final class SOODProtocolTests: XCTestCase {
         var data = Data()
         data.append(contentsOf: "SOOD".utf8)
         data.append(2)
-        data.append(UInt8(ascii: "X"))
+        data.append(UInt8(ascii: "R"))
 
         // Property with null value (0xFFFF)
         data.append(UInt8("_optional".count))
@@ -160,14 +160,15 @@ final class SOODProtocolTests: XCTestCase {
         XCTAssertNotNil(message)
         // For null values, the property is still in the dictionary but has a nil value
         XCTAssertTrue(message?.properties.keys.contains("_optional") ?? false)
-        XCTAssertNil(message?.properties["_optional"] ?? "")
+        // properties["_optional"] returns String?? — .some(nil) when key exists with nil value
+        XCTAssertEqual(message?.properties["_optional"] as? String, nil)
     }
 
     func testDecodeEmptyProperty() {
         var data = Data()
         data.append(contentsOf: "SOOD".utf8)
         data.append(2)
-        data.append(UInt8(ascii: "X"))
+        data.append(UInt8(ascii: "R"))
 
         // Property with empty value (length = 0)
         data.append(UInt8("_empty".count))
@@ -185,7 +186,7 @@ final class SOODProtocolTests: XCTestCase {
         var data = Data()
         data.append(contentsOf: "NOPE".utf8)
         data.append(2)
-        data.append(UInt8(ascii: "X"))
+        data.append(UInt8(ascii: "R"))
 
         let message = SOODProtocol.decode(data: data, sourceIP: "192.168.1.100", sourcePort: 9003)
         XCTAssertNil(message)
@@ -195,7 +196,7 @@ final class SOODProtocolTests: XCTestCase {
         var data = Data()
         data.append(contentsOf: "SOOD".utf8)
         data.append(3)  // Wrong version
-        data.append(UInt8(ascii: "X"))
+        data.append(UInt8(ascii: "R"))
 
         let message = SOODProtocol.decode(data: data, sourceIP: "192.168.1.100", sourcePort: 9003)
         XCTAssertNil(message)

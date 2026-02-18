@@ -144,7 +144,9 @@ enum SOODProtocol {
             } else if name == "_replyport" {
                 replyPort = value.flatMap(Int.init)
             } else {
-                properties[name] = value
+                // Use updateValue to preserve nil entries in the dictionary.
+                // Direct subscript assignment (properties[name] = nil) removes the key.
+                properties.updateValue(value, forKey: name)
             }
         }
 

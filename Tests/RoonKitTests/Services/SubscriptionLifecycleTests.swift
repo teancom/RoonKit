@@ -139,6 +139,68 @@ struct SubscriptionLifecycleTests {
         }
     }
 
+    @Test("Stale termination handler does not clobber new subscription (prevents bug 1da6869)")
+    func staleTerminationHandlerDoesNotClobberNewSubscription() async throws {
+        let zone = MockResponses.sampleZone(id: "z1", name: "Living Room")
+        let server = MockRoonServer(zones: [zone])
+        let connection = server.createConnection(extensionInfo: extensionInfo)
+        try await connection.connect()
+
+        let transport = TransportService(connection: connection)
+
+        // First subscription
+        let stream1 = try await transport.subscribeZones()
+
+        // Drain the Subscribed event from stream1 so it's actively listening
+        let stream1Task = Task<Void, Never> {
+            for await _ in stream1 { }
+        }
+
+        // Wait for stream1 to be established
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Second subscription — finishes stream1, which triggers stream1's onTermination
+        let stream2 = try await transport.subscribeZones()
+
+        // Wait for stream1's onTermination Task to fire and execute.
+        // The handler runs in a Task { await self.handleSubscriptionTermination(key:) },
+        // so we need to yield long enough for that actor-isolated call to complete.
+        await stream1Task.value
+        try await Task.sleep(for: .milliseconds(100))
+
+        // Drain the initial Subscribed event from stream2
+        let collector = EventCollector<ZoneEvent>()
+        let stream2Task = Task {
+            for await event in stream2 {
+                collector.append(event)
+                if collector.count >= 2 { break }
+            }
+        }
+
+        // Wait for stream2 to process its Subscribed event
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Inject a zone change — stream2 must still be alive to receive this
+        let updatedZone = MockResponses.sampleZone(id: "z1", name: "Living Room", state: "paused")
+        server.injectZoneEvent(name: "Changed", zones: [updatedZone])
+
+        await stream2Task.value
+
+        // Verify stream2 received both events: Subscribed + Changed
+        let events = collector.events
+        #expect(events.count == 2, "Stream2 should receive both Subscribed and Changed events")
+        if case .subscribed = events[0] {
+            // Expected
+        } else {
+            Issue.record("Expected .subscribed as first event, got \(events[0])")
+        }
+        if case .zonesChanged(let zones) = events[1] {
+            #expect(zones[0].state == .paused)
+        } else {
+            Issue.record("Expected .zonesChanged as second event, got \(events[1])")
+        }
+    }
+
     // MARK: - Output Subscription
 
     @Test("Output subscription delivers initial outputs")
