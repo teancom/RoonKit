@@ -56,6 +56,7 @@ public actor TransportService {
         )
 
         let eventStream = AsyncStream<ZoneEvent> { continuation in
+            self.zoneEventContinuation?.finish()
             self.zoneEventContinuation = continuation
 
             continuation.onTermination = { @Sendable _ in
@@ -138,6 +139,7 @@ public actor TransportService {
         )
 
         let eventStream = AsyncStream<OutputEvent> { continuation in
+            self.outputEventContinuation?.finish()
             self.outputEventContinuation = continuation
 
             continuation.onTermination = { @Sendable _ in
@@ -226,6 +228,7 @@ public actor TransportService {
         )
 
         let eventStream = AsyncStream<QueueEvent> { continuation in
+            self.queueEventContinuations[zoneOrOutputId]?.finish()
             self.queueEventContinuations[zoneOrOutputId] = continuation
 
             continuation.onTermination = { @Sendable _ in

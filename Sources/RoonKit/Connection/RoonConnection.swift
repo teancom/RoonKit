@@ -326,6 +326,9 @@ public actor RoonConnection {
     ///   will cause the first stream to stop receiving updates.
     public var stateStream: AsyncStream<ConnectionState> {
         AsyncStream { continuation in
+            // Finish the previous stream so its consumer's `for await` terminates
+            // instead of hanging forever.
+            self.stateStreamContinuation?.finish()
             self.stateStreamContinuation = continuation
             continuation.yield(self.state)
         }
