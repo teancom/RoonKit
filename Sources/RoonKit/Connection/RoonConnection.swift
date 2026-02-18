@@ -168,7 +168,8 @@ public actor RoonConnection {
 
         let registerResponse = try await send(
             path: RoonService.path(RoonService.registry, "register"),
-            body: registrationRequest.toDictionary()
+            body: registrationRequest.toDictionary(),
+            timeout: Self.registrationTimeout
         )
 
         guard registerResponse.name == "Registered",
@@ -211,8 +212,22 @@ public actor RoonConnection {
 
     // MARK: - Sending Requests
 
+    /// Default timeout for send requests
+    public static let defaultSendTimeout: Duration = .seconds(30)
+
+    /// Extended timeout for registration (user may need to authorize in Roon UI)
+    private static let registrationTimeout: Duration = .seconds(300)
+
     /// Send a request and wait for the response
-    public func send(path: String, body: [String: Any]? = nil) async throws -> RoonResponse {
+    /// - Parameters:
+    ///   - path: The service path (e.g., "com.roonlabs.transport:1/control")
+    ///   - body: Optional request body
+    ///   - timeout: How long to wait for a response before throwing `.timeout`
+    public func send(
+        path: String,
+        body: [String: Any]? = nil,
+        timeout: Duration = RoonConnection.defaultSendTimeout
+    ) async throws -> RoonResponse {
         guard let transport = transport else {
             throw ConnectionError.connectionFailed("not connected")
         }
@@ -223,12 +238,46 @@ public actor RoonConnection {
         let request = RoonRequest(requestId: requestId, path: path, body: body)
         let encodedData = try MessageCoding.encode(request)
 
-        // Send the message as binary data (required by Roon MOO protocol)
-        try await transport.send(encodedData)
-
-        // Then wait for the response
+        // Why this structure is not straightforward:
+        //
+        // The naive approach — `try await transport.send()` then
+        // `withCheckedThrowingContinuation` — has an actor reentrancy race.
+        // `transport.send()` suspends, and during that suspension the receive
+        // loop (also actor-isolated) can deliver the response. If the
+        // continuation isn't registered in `pendingRequests` yet,
+        // `handleMessage` silently drops the response and the caller hangs.
+        //
+        // Fix: register the continuation FIRST, then send. We exploit the
+        // fact that `withCheckedThrowingContinuation`'s closure runs
+        // synchronously on the actor — `pendingRequests[requestId]` is set
+        // before any other actor-isolated code can interleave. The actual
+        // send happens in a child Task spawned from that closure (because
+        // the closure is synchronous and `transport.send()` is async).
+        //
+        // Three things race to complete the continuation: normal response
+        // delivery, send failure, and timeout. Each uses
+        // `removeValue(forKey:) != nil` as an atomic claim — only the first
+        // to remove the key resumes the continuation, preventing
+        // double-resume crashes.
         return try await withCheckedThrowingContinuation { continuation in
             pendingRequests[requestId] = continuation
+
+            Task {
+                do {
+                    try await transport.send(encodedData)
+                } catch {
+                    if self.pendingRequests.removeValue(forKey: requestId) != nil {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+
+            Task {
+                try? await Task.sleep(for: timeout)
+                if self.pendingRequests.removeValue(forKey: requestId) != nil {
+                    continuation.resume(throwing: ConnectionError.timeout)
+                }
+            }
         }
     }
 
