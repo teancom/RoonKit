@@ -19,12 +19,19 @@ public actor TransportService {
 
     /// Stream of zone events
     private var zoneEventContinuation: AsyncStream<ZoneEvent>.Continuation?
+    /// The subscription key currently owning zoneSubscription/zoneEventContinuation.
+    /// Termination handlers check this to avoid clobbering a newer subscription.
+    private var activeZoneSubscriptionKey: Int?
 
     /// Stream of output events
     private var outputEventContinuation: AsyncStream<OutputEvent>.Continuation?
+    /// The subscription key currently owning outputSubscription/outputEventContinuation.
+    private var activeOutputSubscriptionKey: Int?
 
     /// Queue event continuations keyed by zone/output ID
     private var queueEventContinuations: [String: AsyncStream<QueueEvent>.Continuation] = [:]
+    /// The subscription key currently owning each queue subscription, keyed by zone/output ID.
+    private var activeQueueSubscriptionKeys: [String: Int] = [:]
 
     public init(connection: RoonConnection) {
         self.connection = connection
@@ -58,6 +65,7 @@ public actor TransportService {
         let eventStream = AsyncStream<ZoneEvent> { continuation in
             self.zoneEventContinuation?.finish()
             self.zoneEventContinuation = continuation
+            self.activeZoneSubscriptionKey = key
 
             continuation.onTermination = { @Sendable _ in
                 Task { await self.handleSubscriptionTermination(key: key) }
@@ -114,10 +122,17 @@ public actor TransportService {
     }
 
     private func handleSubscriptionTermination(key: Int) async {
+        // Only clean up if this termination is for the *current* subscription.
+        // When subscribeZones() is called twice rapidly, the old subscription's
+        // onTermination fires after the new subscription is already set up.
+        // Without this guard, the old handler would cancel the new subscription.
+        guard activeZoneSubscriptionKey == key else { return }
+
         zoneSubscription?.cancel()
         zoneSubscription = nil
         zoneEventContinuation?.finish()
         zoneEventContinuation = nil
+        activeZoneSubscriptionKey = nil
 
         // Send unsubscribe request (fire and forget)
         _ = try? await connection.send(
@@ -141,6 +156,7 @@ public actor TransportService {
         let eventStream = AsyncStream<OutputEvent> { continuation in
             self.outputEventContinuation?.finish()
             self.outputEventContinuation = continuation
+            self.activeOutputSubscriptionKey = key
 
             continuation.onTermination = { @Sendable _ in
                 Task { await self.handleOutputSubscriptionTermination(key: key) }
@@ -192,10 +208,13 @@ public actor TransportService {
     }
 
     private func handleOutputSubscriptionTermination(key: Int) async {
+        guard activeOutputSubscriptionKey == key else { return }
+
         outputSubscription?.cancel()
         outputSubscription = nil
         outputEventContinuation?.finish()
         outputEventContinuation = nil
+        activeOutputSubscriptionKey = nil
 
         // Send unsubscribe request (fire and forget)
         _ = try? await connection.send(
@@ -230,6 +249,7 @@ public actor TransportService {
         let eventStream = AsyncStream<QueueEvent> { continuation in
             self.queueEventContinuations[zoneOrOutputId]?.finish()
             self.queueEventContinuations[zoneOrOutputId] = continuation
+            self.activeQueueSubscriptionKeys[zoneOrOutputId] = key
 
             continuation.onTermination = { @Sendable _ in
                 Task { await self.handleQueueSubscriptionTermination(zoneOrOutputId: zoneOrOutputId, key: key) }
@@ -255,10 +275,13 @@ public actor TransportService {
     }
 
     private func handleQueueSubscriptionTermination(zoneOrOutputId: String, key: Int) async {
+        guard activeQueueSubscriptionKeys[zoneOrOutputId] == key else { return }
+
         queueSubscriptions[zoneOrOutputId]?.cancel()
         queueSubscriptions.removeValue(forKey: zoneOrOutputId)
         queueEventContinuations[zoneOrOutputId]?.finish()
         queueEventContinuations.removeValue(forKey: zoneOrOutputId)
+        activeQueueSubscriptionKeys.removeValue(forKey: zoneOrOutputId)
 
         // Send unsubscribe request (fire and forget)
         _ = try? await connection.send(
