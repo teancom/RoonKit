@@ -188,6 +188,9 @@ public actor RoonConnection {
 
     /// Disconnect from the Roon Core
     public func disconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+
         receiveTask?.cancel()
         receiveTask = nil
 
