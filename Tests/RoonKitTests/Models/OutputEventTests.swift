@@ -26,9 +26,10 @@ struct OutputEventTests {
             ]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .subscribed(let outputs) = event {
+        if case .subscribed(let outputs) = events[0] {
             #expect(outputs.count == 2)
             #expect(outputs[0].id == "out-1")
             #expect(outputs[0].displayName == "Living Room")
@@ -48,9 +49,10 @@ struct OutputEventTests {
             body: [:]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .subscribed(let outputs) = event {
+        if case .subscribed(let outputs) = events[0] {
             #expect(outputs.isEmpty)
         } else {
             Issue.record("Expected subscribed event with empty outputs")
@@ -68,9 +70,10 @@ struct OutputEventTests {
             ]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .outputsRemoved(let ids) = event {
+        if case .outputsRemoved(let ids) = events[0] {
             #expect(ids == ["out-1", "out-2"])
             #expect(ids.count == 2)
         } else {
@@ -95,9 +98,10 @@ struct OutputEventTests {
             ]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .outputsAdded(let outputs) = event {
+        if case .outputsAdded(let outputs) = events[0] {
             #expect(outputs.count == 1)
             #expect(outputs[0].id == "out-new")
             #expect(outputs[0].displayName == "New Speaker")
@@ -124,9 +128,10 @@ struct OutputEventTests {
             ]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .outputsChanged(let outputs) = event {
+        if case .outputsChanged(let outputs) = events[0] {
             #expect(outputs.count == 1)
             #expect(outputs[0].id == "out-1")
             #expect(outputs[0].displayName == "Living Room Updated")
@@ -136,7 +141,7 @@ struct OutputEventTests {
         }
     }
 
-    @Test("OutputEvent returns nil for empty Changed")
+    @Test("OutputEvent returns empty array for empty Changed")
     func outputEventEmptyChanged() {
         let response = RoonResponse(
             verb: .complete,
@@ -145,12 +150,12 @@ struct OutputEventTests {
             body: [:]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
 
-        #expect(event == nil)
+        #expect(events.isEmpty)
     }
 
-    @Test("OutputEvent returns nil for nil body")
+    @Test("OutputEvent returns empty array for nil body")
     func outputEventNilBody() {
         let response = RoonResponse(
             verb: .continue,
@@ -159,12 +164,12 @@ struct OutputEventTests {
             body: nil
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
 
-        #expect(event == nil)
+        #expect(events.isEmpty)
     }
 
-    @Test("OutputEvent returns nil for unknown response name")
+    @Test("OutputEvent returns empty array for unknown response name")
     func outputEventUnknownName() {
         let response = RoonResponse(
             verb: .continue,
@@ -175,14 +180,14 @@ struct OutputEventTests {
             ]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
 
-        #expect(event == nil)
+        #expect(events.isEmpty)
     }
 
-    @Test("OutputEvent prioritizes outputs_removed over other changes")
-    func outputEventRemovesPriority() {
-        // When multiple change types are present, outputs_removed takes priority
+    @Test("OutputEvent returns all event types from a single Changed message")
+    func outputEventReturnsAllEventTypes() {
+        // During output grouping/ungrouping, Roon sends removed + added together
         let response = RoonResponse(
             verb: .continue,
             requestId: 1,
@@ -195,17 +200,26 @@ struct OutputEventTests {
             ]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
 
-        if case .outputsRemoved(let ids) = event {
+        #expect(events.count == 2)
+
+        if case .outputsRemoved(let ids) = events[0] {
             #expect(ids == ["out-1"])
         } else {
-            Issue.record("Expected outputsRemoved to take priority")
+            Issue.record("Expected outputsRemoved as first event")
+        }
+
+        if case .outputsAdded(let outputs) = events[1] {
+            #expect(outputs.count == 1)
+            #expect(outputs[0].id == "out-2")
+        } else {
+            Issue.record("Expected outputsAdded as second event")
         }
     }
 
-    @Test("OutputEvent prioritizes outputs_added over outputs_changed")
-    func outputEventAddsPriority() {
+    @Test("OutputEvent returns added and changed from a single Changed message")
+    func outputEventReturnsAddedAndChanged() {
         let response = RoonResponse(
             verb: .continue,
             requestId: 1,
@@ -220,13 +234,22 @@ struct OutputEventTests {
             ]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
 
-        if case .outputsAdded(let outputs) = event {
+        #expect(events.count == 2)
+
+        if case .outputsAdded(let outputs) = events[0] {
             #expect(outputs.count == 1)
             #expect(outputs[0].id == "out-1")
         } else {
-            Issue.record("Expected outputsAdded to take priority")
+            Issue.record("Expected outputsAdded as first event")
+        }
+
+        if case .outputsChanged(let outputs) = events[1] {
+            #expect(outputs.count == 1)
+            #expect(outputs[0].id == "out-2")
+        } else {
+            Issue.record("Expected outputsChanged as second event")
         }
     }
 
@@ -255,9 +278,10 @@ struct OutputEventTests {
             ]
         )
 
-        let event = OutputEvent.from(response: response)
+        let events = OutputEvent.from(response: response)
+        #expect(events.count == 1)
 
-        if case .subscribed(let outputs) = event {
+        if case .subscribed(let outputs) = events[0] {
             #expect(outputs.count == 1)
             #expect(outputs[0].volume != nil)
             #expect(outputs[0].volume?.type == .db)

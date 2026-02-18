@@ -156,34 +156,37 @@ public actor TransportService {
     }
 
     private func processOutputResponse(_ response: RoonResponse) {
-        guard let event = OutputEvent.from(response: response) else { return }
+        let events = OutputEvent.from(response: response)
+        guard !events.isEmpty else { return }
 
-        // Update local output cache
-        switch event {
-        case .subscribed(let newOutputs):
-            outputs.removeAll()
-            for output in newOutputs {
-                outputs[output.id] = output
+        for event in events {
+            // Update local output cache
+            switch event {
+            case .subscribed(let newOutputs):
+                outputs.removeAll()
+                for output in newOutputs {
+                    outputs[output.id] = output
+                }
+
+            case .outputsAdded(let newOutputs):
+                for output in newOutputs {
+                    outputs[output.id] = output
+                }
+
+            case .outputsRemoved(let ids):
+                for id in ids {
+                    outputs.removeValue(forKey: id)
+                }
+
+            case .outputsChanged(let updatedOutputs):
+                for output in updatedOutputs {
+                    outputs[output.id] = output
+                }
             }
 
-        case .outputsAdded(let newOutputs):
-            for output in newOutputs {
-                outputs[output.id] = output
-            }
-
-        case .outputsRemoved(let ids):
-            for id in ids {
-                outputs.removeValue(forKey: id)
-            }
-
-        case .outputsChanged(let updatedOutputs):
-            for output in updatedOutputs {
-                outputs[output.id] = output
-            }
+            // Emit event
+            outputEventContinuation?.yield(event)
         }
-
-        // Emit event
-        outputEventContinuation?.yield(event)
     }
 
     private func handleOutputSubscriptionTermination(key: Int) async {

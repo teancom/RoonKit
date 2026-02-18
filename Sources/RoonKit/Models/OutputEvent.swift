@@ -16,39 +16,47 @@ public enum OutputEvent: Sendable {
 }
 
 extension OutputEvent {
-    /// Parse an OutputEvent from a subscription response
-    public static func from(response: RoonResponse) -> OutputEvent? {
-        guard let body = response.body else { return nil }
+    /// Parse OutputEvents from a subscription response.
+    ///
+    /// A single Roon `Changed` response can contain **multiple** event types
+    /// simultaneously (e.g., `outputs_removed` + `outputs_added` when outputs
+    /// are grouped/ungrouped). All present fields are returned as separate events.
+    /// Order matters: removed → added → changed, matching the logical sequence.
+    public static func from(response: RoonResponse) -> [OutputEvent] {
+        guard let body = response.body else { return [] }
 
         switch response.name {
         case "Subscribed":
             // Initial subscription response
             if let outputsArray = body["outputs"] as? [[String: Any]] {
                 let outputs = outputsArray.compactMap { Output(from: $0) }
-                return .subscribed(outputs: outputs)
+                return [.subscribed(outputs: outputs)]
             }
-            return .subscribed(outputs: [])
+            return [.subscribed(outputs: [])]
 
         case "Changed":
-            // Incremental update
+            // A single Changed message can contain multiple event types.
+            // Process all present fields — grouping operations send removed + added together.
+            var events: [OutputEvent] = []
+
             if let removedIds = body["outputs_removed"] as? [String], !removedIds.isEmpty {
-                return .outputsRemoved(removedIds)
+                events.append(.outputsRemoved(removedIds))
             }
 
             if let addedArray = body["outputs_added"] as? [[String: Any]], !addedArray.isEmpty {
                 let outputs = addedArray.compactMap { Output(from: $0) }
-                return .outputsAdded(outputs)
+                events.append(.outputsAdded(outputs))
             }
 
             if let changedArray = body["outputs_changed"] as? [[String: Any]], !changedArray.isEmpty {
                 let outputs = changedArray.compactMap { Output(from: $0) }
-                return .outputsChanged(outputs)
+                events.append(.outputsChanged(outputs))
             }
 
-            return nil
+            return events
 
         default:
-            return nil
+            return []
         }
     }
 }
