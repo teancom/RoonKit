@@ -10,23 +10,11 @@ fileprivate extension Data {
     }
 }
 
-/// Test suite for RoonConnection registration and reconnection flow.
+/// Test suite for RoonConnection basic state and message encoding.
 ///
-/// NOTE: This implementation includes simplified tests for basic state transitions and error handling.
-/// The original design plan specified 9 comprehensive tests including complex async message-passing
-/// scenarios (e.g., testing reconnection loops, token refresh during connections, and concurrent
-/// message handling). These have been deferred to Phase 6 due to Swift actor reentrancy limitations
-/// that make it impractical to test complex async interactions without actor runtime support.
-///
-/// Current test coverage (5 tests) validates:
-/// - Connection state lifecycle (disconnected -> connecting -> registering -> connected)
-/// - Token persistence on successful registration
-/// - Token reuse on reconnection attempts
-/// - Registration failure handling
-/// - Disconnect behavior
-///
-/// Phase 6 will add comprehensive async tests using improved actor reentrancy patterns or
-/// alternative testing strategies.
+/// For comprehensive async connection lifecycle tests (state transitions, token persistence,
+/// reconnection, state stream), see `ConnectionLifecycleTests` which uses `MockRoonServer`
+/// to solve the actor reentrancy timing problem.
 @Suite("RoonConnection Tests")
 struct RoonConnectionTests {
 

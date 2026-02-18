@@ -1,22 +1,11 @@
 import Testing
 @testable import RoonKit
 
-/// Test suite for TransportService.
+/// Test suite for TransportService basic state and error handling.
 ///
-/// NOTE: These tests focus on logic that can be tested without complex async message-passing.
-/// The original design specified tests that would call connection.connect() and then send
-/// commands, but this triggers Swift actor reentrancy issues where:
-/// 1. receiveLoop runs in Task.detached and waits for messages
-/// 2. After registration messages are consumed, mock throws error (empty queue)
-/// 3. Tests try to add messages and call service methods, but receive loop already exited
-///
-/// Complex async tests (playback commands, volume control, seek, settings) are deferred to
-/// Phase 6 which will implement proper test infrastructure with better async handling.
-///
-/// Current test coverage validates:
-/// - Zone selection state management
-/// - Error throwing when no zone selected
-/// - TransportError types and descriptions
+/// For comprehensive command tests (play, pause, stop, volume, seek, settings, grouping),
+/// see `TransportCommandTests` which uses `MockRoonServer` to solve the actor reentrancy
+/// timing problem. For subscription lifecycle tests, see `SubscriptionLifecycleTests`.
 @Suite("TransportService Tests")
 struct TransportServiceTests {
 
