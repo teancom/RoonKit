@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let log = Logger(subsystem: "com.macaroon.sync", category: "Transport")
 
 /// Service for controlling playback and managing zones
 public actor TransportService {
@@ -56,11 +59,13 @@ public actor TransportService {
     public func subscribeZones() async throws -> AsyncStream<ZoneEvent> {
         let key = subscriptionKey
         subscriptionKey += 1
+        log.info("subscribeZones key=\(key)")
 
         let responseStream = try await connection.subscribe(
             path: RoonService.path(RoonService.transport, "subscribe_zones"),
             body: ["subscription_key": key]
         )
+        log.info("subscribeZones: got responseStream key=\(key)")
 
         let eventStream = AsyncStream<ZoneEvent> { continuation in
             self.zoneEventContinuation?.finish()
@@ -68,15 +73,22 @@ public actor TransportService {
             self.activeZoneSubscriptionKey = key
 
             continuation.onTermination = { @Sendable _ in
+                log.info("subscribeZones: eventStream onTermination key=\(key)")
                 Task { await self.handleSubscriptionTermination(key: key) }
             }
         }
 
         // Process responses in background
         zoneSubscription = Task {
+            log.info("zoneResponseTask: started key=\(key)")
             for await response in responseStream {
                 self.processZoneResponse(response)
             }
+            // Response stream ended (connection dropped) — finish the event
+            // stream so downstream consumers (RoonController) see the stream
+            // end and can nil their task handles for re-subscription.
+            log.info("zoneResponseTask: responseStream ended, finishing eventStream key=\(key)")
+            self.zoneEventContinuation?.finish()
         }
 
         return eventStream
@@ -168,6 +180,9 @@ public actor TransportService {
             for await response in responseStream {
                 self.processOutputResponse(response)
             }
+            // Response stream ended (connection dropped) — finish the event
+            // stream so downstream consumers see the stream end.
+            self.outputEventContinuation?.finish()
         }
 
         return eventStream
@@ -261,6 +276,10 @@ public actor TransportService {
             for await response in responseStream {
                 self.processQueueResponse(response, zoneOrOutputId: zoneOrOutputId)
             }
+            // Response stream ended (connection dropped) — finish the event
+            // stream so downstream consumers (QueueState) see the stream
+            // end and can nil their task handles for re-subscription.
+            self.queueEventContinuations[zoneOrOutputId]?.finish()
         }
         queueSubscriptions[zoneOrOutputId] = task
 

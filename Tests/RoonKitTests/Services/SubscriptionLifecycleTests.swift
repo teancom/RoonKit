@@ -291,6 +291,91 @@ struct SubscriptionLifecycleTests {
         }
     }
 
+    // MARK: - Connection Drop Stream Termination
+
+    @Test("Connection drop finishes zone event stream (prevents bug 31528)")
+    func connectionDropFinishesZoneEventStream() async throws {
+        let zone = MockResponses.sampleZone(id: "z1", name: "Kitchen")
+        let server = MockRoonServer(zones: [zone])
+        let connection = server.createConnection(extensionInfo: extensionInfo)
+        try await connection.connect()
+
+        let transport = TransportService(connection: connection)
+        let eventStream = try await transport.subscribeZones()
+
+        // Consume initial Subscribed event
+        var iterator = eventStream.makeAsyncIterator()
+        let first = await iterator.next()
+        guard case .subscribed = first else {
+            Issue.record("Expected .subscribed event, got \(String(describing: first))")
+            return
+        }
+
+        // Drop the connection — this finishes the response stream in RoonConnection.
+        // TransportService must propagate termination to the event stream.
+        server.simulateConnectionDrop()
+
+        // The event stream must terminate (next() returns nil).
+        // Without the fix, this hangs forever.
+        let next = await iterator.next()
+        #expect(next == nil, "Event stream should terminate after connection drop")
+    }
+
+    @Test("Connection drop finishes queue event stream (prevents bug 31528)")
+    func connectionDropFinishesQueueEventStream() async throws {
+        let item = MockResponses.sampleQueueItem(id: 1, title: "Test Song")
+        let server = MockRoonServer(queueItems: [item])
+        let connection = server.createConnection(extensionInfo: extensionInfo)
+        try await connection.connect()
+
+        let transport = TransportService(connection: connection)
+        await transport.selectZone(id: "zone-1")
+        let eventStream = try await transport.subscribeQueue(zoneOrOutputId: "zone-1")
+
+        // Consume initial Subscribed event
+        var iterator = eventStream.makeAsyncIterator()
+        let first = await iterator.next()
+        guard case .subscribed = first else {
+            Issue.record("Expected .subscribed event, got \(String(describing: first))")
+            return
+        }
+
+        // Drop the connection
+        server.simulateConnectionDrop()
+
+        // The event stream must terminate
+        let next = await iterator.next()
+        #expect(next == nil, "Queue event stream should terminate after connection drop")
+    }
+
+    @Test("Connection drop finishes output event stream (prevents bug 31528)")
+    func connectionDropFinishesOutputEventStream() async throws {
+        let output = MockResponses.sampleOutput(id: "o1", zoneId: "z1", name: "Speakers")
+        let server = MockRoonServer(outputs: [output])
+        let connection = server.createConnection(extensionInfo: extensionInfo)
+        try await connection.connect()
+
+        let transport = TransportService(connection: connection)
+        let eventStream = try await transport.subscribeOutputs()
+
+        // Consume initial Subscribed event
+        var iterator = eventStream.makeAsyncIterator()
+        let first = await iterator.next()
+        guard case .subscribed = first else {
+            Issue.record("Expected .subscribed event, got \(String(describing: first))")
+            return
+        }
+
+        // Drop the connection
+        server.simulateConnectionDrop()
+
+        // The event stream must terminate
+        let next = await iterator.next()
+        #expect(next == nil, "Output event stream should terminate after connection drop")
+    }
+
+    // MARK: - Queue Subscription
+
     @Test("Queue re-subscribe on rapid zone switch (prevents bug 7c33b65)")
     func queueReSubscribeOnZoneSwitch() async throws {
         let item1 = MockResponses.sampleQueueItem(id: 1, title: "Song A")

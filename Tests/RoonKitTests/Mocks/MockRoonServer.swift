@@ -112,7 +112,8 @@ final class MockRoonServer: @unchecked Sendable {
         tokenStorage: TokenStorage = InMemoryTokenStorage(),
         reconnectorConfig: ReconnectorConfig = ReconnectorConfig(
             baseDelay: 0.01, maxDelay: 0.05, maxJitter: 0, maxAttempts: 3
-        )
+        ),
+        keepaliveTimeout: Duration = .seconds(15)
     ) -> RoonConnection {
         RoonConnection(
             host: "mock-host",
@@ -120,6 +121,7 @@ final class MockRoonServer: @unchecked Sendable {
             extensionInfo: extensionInfo,
             tokenStorage: tokenStorage,
             reconnectorConfig: reconnectorConfig,
+            keepaliveTimeout: keepaliveTimeout,
             transportFactory: { [transport] _ in transport }
         )
     }

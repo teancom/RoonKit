@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let log = Logger(subsystem: "com.macaroon.sync", category: "Connection")
 
 /// Actor managing the WebSocket connection to a Roon Core
 public actor RoonConnection {
@@ -45,6 +48,15 @@ public actor RoonConnection {
     /// Task handling incoming messages
     private var receiveTask: Task<Void, Never>?
 
+    /// Keepalive watchdog: how long without a message before declaring the connection dead
+    private let keepaliveTimeout: Duration
+
+    /// Timestamp of the last received WebSocket message (uses ContinuousClock so sleep counts)
+    private var lastMessageTime: ContinuousClock.Instant = .now
+
+    /// Task running the keepalive watchdog loop
+    private var watchdogTask: Task<Void, Never>?
+
     /// Token storage for authentication persistence
     private let tokenStorage: TokenStorage
 
@@ -68,13 +80,15 @@ public actor RoonConnection {
         port: Int = 9100,
         extensionInfo: ExtensionInfo,
         tokenStorage: TokenStorage = UserDefaultsTokenStorage(),
-        reconnectorConfig: ReconnectorConfig = .default
+        reconnectorConfig: ReconnectorConfig = .default,
+        keepaliveTimeout: Duration = .seconds(15)
     ) {
         self.host = host
         self.port = port
         self.extensionInfo = extensionInfo
         self.tokenStorage = tokenStorage
         self.reconnector = Reconnector(config: reconnectorConfig)
+        self.keepaliveTimeout = keepaliveTimeout
         self.transportFactory = { url in
             URLSessionWebSocketTransport(url: url)
         }
@@ -87,6 +101,7 @@ public actor RoonConnection {
         extensionInfo: ExtensionInfo,
         tokenStorage: TokenStorage = InMemoryTokenStorage(),
         reconnectorConfig: ReconnectorConfig = .default,
+        keepaliveTimeout: Duration = .seconds(15),
         transportFactory: @escaping @Sendable (URL) -> WebSocketTransport
     ) {
         self.host = host
@@ -94,6 +109,7 @@ public actor RoonConnection {
         self.extensionInfo = extensionInfo
         self.tokenStorage = tokenStorage
         self.reconnector = Reconnector(config: reconnectorConfig)
+        self.keepaliveTimeout = keepaliveTimeout
         self.transportFactory = transportFactory
     }
 
@@ -122,8 +138,14 @@ public actor RoonConnection {
         updateState(.registering)
 
         // Start receiving messages
+        lastMessageTime = .now
         receiveTask = Task.detached { [weak self] in
             await self?.receiveLoop()
+        }
+
+        // Start keepalive watchdog
+        watchdogTask = Task { [weak self] in
+            await self?.watchdogLoop()
         }
 
         // Perform registration handshake
@@ -188,8 +210,12 @@ public actor RoonConnection {
 
     /// Disconnect from the Roon Core
     public func disconnect() {
+        log.info("disconnect() pending=\(self.pendingRequests.count) subs=\(self.subscriptions.count)")
         reconnectTask?.cancel()
         reconnectTask = nil
+
+        watchdogTask?.cancel()
+        watchdogTask = nil
 
         receiveTask?.cancel()
         receiveTask = nil
@@ -292,6 +318,7 @@ public actor RoonConnection {
 
         let requestId = nextRequestId
         nextRequestId += 1
+        log.info("subscribe: path=\(path, privacy: .public) requestId=\(requestId) totalSubs=\(self.subscriptions.count + 1)")
 
         let request = RoonRequest(requestId: requestId, path: path, body: body)
         let encodedData = try MessageCoding.encode(request)
@@ -300,6 +327,7 @@ public actor RoonConnection {
             self.subscriptions[requestId] = continuation
 
             continuation.onTermination = { @Sendable _ in
+                log.info("subscribe: onTermination requestId=\(requestId)")
                 Task { await self.removeSubscription(requestId) }
             }
         }
@@ -335,6 +363,7 @@ public actor RoonConnection {
     }
 
     private func updateState(_ newState: ConnectionState) {
+        log.info("state: \(String(describing: self.state), privacy: .public) → \(String(describing: newState), privacy: .public)")
         state = newState
         stateStreamContinuation?.yield(newState)
     }
@@ -347,11 +376,13 @@ public actor RoonConnection {
     /// Attempt to reconnect after connection loss
     private func attemptReconnect() async {
         guard !Task.isCancelled else { return }
+        log.info("attemptReconnect: starting")
 
         await reconnector.start()
 
         while await reconnector.isReconnecting {
             let attempt = await reconnector.currentAttempt + 1
+            log.info("attemptReconnect: attempt \(attempt)")
             updateState(.reconnecting(attempt: attempt))
 
             do {
@@ -365,17 +396,51 @@ public actor RoonConnection {
                 try await connect()
 
                 // If we get here, connection succeeded
+                log.info("attemptReconnect: reconnected successfully")
                 await reconnector.stop()
                 return
             } catch ConnectionError.maxReconnectAttemptsExceeded {
+                log.info("attemptReconnect: max attempts exceeded")
                 updateState(.failed(.maxReconnectAttemptsExceeded))
                 await reconnector.stop()
                 return
             } catch {
+                log.info("attemptReconnect: attempt failed — \(error, privacy: .public)")
                 // Continue trying
                 continue
             }
         }
+    }
+
+    // MARK: - Keepalive Watchdog
+
+    /// Periodically checks that messages are still arriving.
+    ///
+    /// Roon sends application-level pings every ~5s. If no message arrives within
+    /// `keepaliveTimeout` while we think we're connected, the transport is dead
+    /// (e.g., after macOS sleep/wake where `receive()` hangs silently).
+    /// Force-closing the transport makes `receive()` throw, entering the existing
+    /// error → reconnect path.
+    private func watchdogLoop() async {
+        let clock = ContinuousClock()
+        let checkInterval = keepaliveTimeout / 2
+
+        while !Task.isCancelled {
+            try? await clock.sleep(for: checkInterval)
+            guard !Task.isCancelled else { break }
+
+            // Only act when fully connected — skip during registration/reconnection
+            guard state.canSendMessages else { continue }
+
+            let elapsed = clock.now - lastMessageTime
+            if elapsed > keepaliveTimeout {
+                log.warning("watchdog: no message for \(elapsed, privacy: .public), closing transport")
+                transport?.close(code: .goingAway, reason: nil)
+                break
+            }
+        }
+
+        watchdogTask = nil
     }
 
     // MARK: - Message Receiving
@@ -388,6 +453,7 @@ public actor RoonConnection {
         while !Task.isCancelled {
             do {
                 let message = try await transport.receive()
+                lastMessageTime = .now
 
                 switch message {
                 case .text(let text):
@@ -400,8 +466,10 @@ public actor RoonConnection {
                     try await handleMessage(data)
                 }
             } catch {
+                log.info("receiveLoop: error — \(error, privacy: .public)")
                 // Resume all pending request continuations so callers don't hang forever
                 let connectionError = ConnectionError.connectionClosed(code: 1006, reason: error.localizedDescription)
+                log.info("receiveLoop: resuming \(self.pendingRequests.count) pending requests")
                 for (_, continuation) in pendingRequests {
                     continuation.resume(throwing: connectionError)
                 }
@@ -409,6 +477,7 @@ public actor RoonConnection {
 
                 // Finish all subscription streams so consumers (e.g. zone subscriptions)
                 // can detect the disconnection and re-subscribe after reconnection
+                log.info("receiveLoop: finishing \(self.subscriptions.count) subscriptions")
                 for (_, continuation) in subscriptions {
                     continuation.finish()
                 }
