@@ -59,13 +59,13 @@ public actor TransportService {
     public func subscribeZones() async throws -> AsyncStream<ZoneEvent> {
         let key = subscriptionKey
         subscriptionKey += 1
-        log.info("subscribeZones key=\(key)")
+        log.log(level: DebugLogging.verboseLevel,"subscribeZones key=\(key)")
 
         let responseStream = try await connection.subscribe(
             path: RoonService.path(RoonService.transport, "subscribe_zones"),
             body: ["subscription_key": key]
         )
-        log.info("subscribeZones: got responseStream key=\(key)")
+        log.log(level: DebugLogging.verboseLevel,"subscribeZones: got responseStream key=\(key)")
 
         let eventStream = AsyncStream<ZoneEvent> { continuation in
             self.zoneEventContinuation?.finish()
@@ -73,21 +73,21 @@ public actor TransportService {
             self.activeZoneSubscriptionKey = key
 
             continuation.onTermination = { @Sendable _ in
-                log.info("subscribeZones: eventStream onTermination key=\(key)")
+                log.log(level: DebugLogging.verboseLevel,"subscribeZones: eventStream onTermination key=\(key)")
                 Task { await self.handleSubscriptionTermination(key: key) }
             }
         }
 
         // Process responses in background
         zoneSubscription = Task {
-            log.info("zoneResponseTask: started key=\(key)")
+            log.log(level: DebugLogging.verboseLevel,"zoneResponseTask: started key=\(key)")
             for await response in responseStream {
                 self.processZoneResponse(response)
             }
             // Response stream ended (connection dropped) — finish the event
             // stream so downstream consumers (RoonController) see the stream
             // end and can nil their task handles for re-subscription.
-            log.info("zoneResponseTask: responseStream ended, finishing eventStream key=\(key)")
+            log.log(level: DebugLogging.verboseLevel,"zoneResponseTask: responseStream ended, finishing eventStream key=\(key)")
             self.zoneEventContinuation?.finish()
         }
 

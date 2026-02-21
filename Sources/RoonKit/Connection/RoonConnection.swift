@@ -210,7 +210,7 @@ public actor RoonConnection {
 
     /// Disconnect from the Roon Core
     public func disconnect() {
-        log.info("disconnect() pending=\(self.pendingRequests.count) subs=\(self.subscriptions.count)")
+        log.log(level: DebugLogging.verboseLevel,"disconnect() pending=\(self.pendingRequests.count) subs=\(self.subscriptions.count)")
         reconnectTask?.cancel()
         reconnectTask = nil
 
@@ -318,7 +318,7 @@ public actor RoonConnection {
 
         let requestId = nextRequestId
         nextRequestId += 1
-        log.info("subscribe: path=\(path, privacy: .public) requestId=\(requestId) totalSubs=\(self.subscriptions.count + 1)")
+        log.log(level: DebugLogging.verboseLevel,"subscribe: path=\(path, privacy: .public) requestId=\(requestId) totalSubs=\(self.subscriptions.count + 1)")
 
         let request = RoonRequest(requestId: requestId, path: path, body: body)
         let encodedData = try MessageCoding.encode(request)
@@ -327,7 +327,7 @@ public actor RoonConnection {
             self.subscriptions[requestId] = continuation
 
             continuation.onTermination = { @Sendable _ in
-                log.info("subscribe: onTermination requestId=\(requestId)")
+                log.log(level: DebugLogging.verboseLevel,"subscribe: onTermination requestId=\(requestId)")
                 Task { await self.removeSubscription(requestId) }
             }
         }
@@ -363,7 +363,7 @@ public actor RoonConnection {
     }
 
     private func updateState(_ newState: ConnectionState) {
-        log.info("state: \(String(describing: self.state), privacy: .public) → \(String(describing: newState), privacy: .public)")
+        log.log(level: DebugLogging.verboseLevel,"state: \(String(describing: self.state), privacy: .public) → \(String(describing: newState), privacy: .public)")
         state = newState
         stateStreamContinuation?.yield(newState)
     }
@@ -376,13 +376,13 @@ public actor RoonConnection {
     /// Attempt to reconnect after connection loss
     private func attemptReconnect() async {
         guard !Task.isCancelled else { return }
-        log.info("attemptReconnect: starting")
+        log.log(level: DebugLogging.verboseLevel,"attemptReconnect: starting")
 
         await reconnector.start()
 
         while await reconnector.isReconnecting {
             let attempt = await reconnector.currentAttempt + 1
-            log.info("attemptReconnect: attempt \(attempt)")
+            log.log(level: DebugLogging.verboseLevel,"attemptReconnect: attempt \(attempt)")
             updateState(.reconnecting(attempt: attempt))
 
             do {
@@ -396,16 +396,16 @@ public actor RoonConnection {
                 try await connect()
 
                 // If we get here, connection succeeded
-                log.info("attemptReconnect: reconnected successfully")
+                log.info("reconnected successfully")
                 await reconnector.stop()
                 return
             } catch ConnectionError.maxReconnectAttemptsExceeded {
-                log.info("attemptReconnect: max attempts exceeded")
+                log.info("reconnect failed: max attempts exceeded")
                 updateState(.failed(.maxReconnectAttemptsExceeded))
                 await reconnector.stop()
                 return
             } catch {
-                log.info("attemptReconnect: attempt failed — \(error, privacy: .public)")
+                log.log(level: DebugLogging.verboseLevel,"attemptReconnect: attempt failed — \(error, privacy: .public)")
                 // Continue trying
                 continue
             }
@@ -466,10 +466,10 @@ public actor RoonConnection {
                     try await handleMessage(data)
                 }
             } catch {
-                log.info("receiveLoop: error — \(error, privacy: .public)")
+                log.log(level: DebugLogging.verboseLevel,"receiveLoop: error — \(error, privacy: .public)")
                 // Resume all pending request continuations so callers don't hang forever
                 let connectionError = ConnectionError.connectionClosed(code: 1006, reason: error.localizedDescription)
-                log.info("receiveLoop: resuming \(self.pendingRequests.count) pending requests")
+                log.log(level: DebugLogging.verboseLevel,"receiveLoop: resuming \(self.pendingRequests.count) pending requests")
                 for (_, continuation) in pendingRequests {
                     continuation.resume(throwing: connectionError)
                 }
@@ -477,7 +477,7 @@ public actor RoonConnection {
 
                 // Finish all subscription streams so consumers (e.g. zone subscriptions)
                 // can detect the disconnection and re-subscribe after reconnection
-                log.info("receiveLoop: finishing \(self.subscriptions.count) subscriptions")
+                log.log(level: DebugLogging.verboseLevel,"receiveLoop: finishing \(self.subscriptions.count) subscriptions")
                 for (_, continuation) in subscriptions {
                     continuation.finish()
                 }
