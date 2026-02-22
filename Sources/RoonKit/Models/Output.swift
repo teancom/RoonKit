@@ -47,6 +47,34 @@ public struct VolumeControl: Sendable, Equatable {
     }
 }
 
+extension VolumeControl {
+    /// Normalized volume as a 0.0–1.0 fraction for UI display.
+    ///
+    /// Returns 0.0 for `.incremental` type (no absolute value available)
+    /// and when `max == min` (division by zero guard).
+    public var normalizedValue: Double {
+        switch type {
+        case .incremental:
+            return 0.0
+        case .number, .db:
+            guard max > min else { return 0.0 }
+            return (value - min) / (max - min)
+        }
+    }
+
+    /// Convert a 0.0–1.0 normalized value back to the raw volume range.
+    ///
+    /// For `.incremental` type, returns `min` (no absolute mapping possible).
+    public func denormalize(_ normalized: Double) -> Double {
+        switch type {
+        case .incremental:
+            return min
+        case .number, .db:
+            return min + normalized * (max - min)
+        }
+    }
+}
+
 /// Source control status
 public enum SourceControlStatus: String, Sendable, Codable {
     case selected
