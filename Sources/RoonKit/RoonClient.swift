@@ -26,6 +26,18 @@ public actor RoonClient {
         }
     }()
 
+    /// Create an independent BrowseService instance with multi-session mode enabled.
+    ///
+    /// Use this when you need a BrowseService that won't interfere with the
+    /// client's built-in `browse` property — for example, background thumbnail
+    /// resolution or parallel library enumeration.
+    public func createBrowseService() -> BrowseService {
+        let service = BrowseService(connection: connection) { [weak self] in
+            await self?.transport.selectedZoneId
+        }
+        return service
+    }
+
     /// Image service for fetching album art and other images
     public lazy var images: ImageService = {
         ImageService(host: host, port: port)
