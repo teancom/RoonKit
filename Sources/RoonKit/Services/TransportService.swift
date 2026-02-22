@@ -85,8 +85,8 @@ public actor TransportService {
                 self.processZoneResponse(response)
             }
             // Response stream ended (connection dropped) — finish the event
-            // stream so downstream consumers (RoonController) see the stream
-            // end and can nil their task handles for re-subscription.
+            // stream so downstream consumers see the stream end and can nil
+            // their task handles for re-subscription.
             log.log(level: DebugLogging.verboseLevel,"zoneResponseTask: responseStream ended, finishing eventStream key=\(key)")
             self.zoneEventContinuation?.finish()
         }

@@ -170,7 +170,7 @@ public actor ImageService {
         }
     }
 
-    /// Build an image URL without fetching (for SwiftUI AsyncImage etc.)
+    /// Build an image URL without fetching (for image-loading views etc.)
     nonisolated public func imageURL(imageKey: String, options: ImageOptions = .original) -> URL? {
         buildImageURL(imageKey: imageKey, options: options)
     }
