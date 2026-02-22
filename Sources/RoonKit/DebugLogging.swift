@@ -16,9 +16,9 @@ import os
 ///     log.log(level: DebugLogging.verboseLevel, "detail=\(value, privacy: .public)")
 ///
 /// View logs:
-///     log show --predicate 'subsystem BEGINSWITH "com.macaroon"' --last 10m --info
+///     log show --predicate 'subsystem CONTAINS "roonkit"' --last 10m --info
 public enum DebugLogging {
-    private static let key = "debugLogging"
+    private static let key = "roonkit.debugLogging"
 
     public static var isEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: key) }
