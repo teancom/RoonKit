@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let log = Logger(subsystem: "com.macaroon.sync", category: "Transport")
+private let log = Logger(subsystem: RoonKitLog.subsystem, category: "Transport")
 
 /// Service for controlling playback and managing zones
 public actor TransportService {

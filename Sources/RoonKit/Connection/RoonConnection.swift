@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let log = Logger(subsystem: "com.macaroon.sync", category: "Connection")
+private let log = Logger(subsystem: RoonKitLog.subsystem, category: "Connection")
 
 /// Actor managing the WebSocket connection to a Roon Core
 public actor RoonConnection {
