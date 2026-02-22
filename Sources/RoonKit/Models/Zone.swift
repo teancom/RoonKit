@@ -98,6 +98,25 @@ public struct Zone: Sendable, Identifiable, Equatable {
 }
 
 extension Zone {
+    /// A source control that supports standby, paired with its output ID.
+    public struct StandbySourceControl: Sendable, Equatable {
+        public let outputId: String
+        public let sourceControl: SourceControl
+    }
+
+    /// The first source control across all outputs that supports standby.
+    ///
+    /// Used by zone pickers to offer a "standby" action for zones with
+    /// hardware that supports power-off/standby mode.
+    public var standbySourceControl: StandbySourceControl? {
+        for output in outputs {
+            if let sc = output.sourceControls.first(where: { $0.supportsStandby }) {
+                return StandbySourceControl(outputId: output.id, sourceControl: sc)
+            }
+        }
+        return nil
+    }
+
     /// Parse a Zone from Roon's JSON response
     public init?(from dict: [String: Any]) {
         guard let zoneId = dict["zone_id"] as? String,

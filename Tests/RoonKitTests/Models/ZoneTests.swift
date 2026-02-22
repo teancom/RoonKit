@@ -99,4 +99,117 @@ struct ZoneTests {
         #expect(PlaybackState(rawValue: "stopped") == .stopped)
         #expect(PlaybackState(rawValue: "invalid") == nil)
     }
+
+    @Test("Zone with standby-capable source control returns it")
+    func standbySourceControlFound() {
+        let scDict: [String: Any] = [
+            "display_name": "Speaker",
+            "status": "selected",
+            "supports_standby": true,
+            "control_key": "ctl-1"
+        ]
+        let sc = SourceControl(from: scDict)!
+
+        let output = Output(
+            id: "out-1",
+            zoneId: "zone-123",
+            displayName: "Living Room Speaker",
+            sourceControls: [sc]
+        )
+
+        let zone = Zone(
+            id: "zone-123",
+            displayName: "Living Room",
+            outputs: [output]
+        )
+
+        let standby = zone.standbySourceControl
+
+        #expect(standby != nil)
+        #expect(standby?.outputId == "out-1")
+        #expect(standby?.sourceControl.displayName == "Speaker")
+        #expect(standby?.sourceControl.supportsStandby == true)
+    }
+
+    @Test("Zone with no standby-capable source controls returns nil")
+    func standbySourceControlNotFound() {
+        let scDict: [String: Any] = [
+            "display_name": "Speaker",
+            "status": "selected",
+            "supports_standby": false,
+            "control_key": "ctl-1"
+        ]
+        let sc = SourceControl(from: scDict)!
+
+        let output = Output(
+            id: "out-1",
+            zoneId: "zone-123",
+            displayName: "Living Room Speaker",
+            sourceControls: [sc]
+        )
+
+        let zone = Zone(
+            id: "zone-123",
+            displayName: "Living Room",
+            outputs: [output]
+        )
+
+        #expect(zone.standbySourceControl == nil)
+    }
+
+    @Test("Zone with multiple outputs finds first standby-capable source control")
+    func standbySourceControlMultipleOutputs() {
+        let nonStandbyDict: [String: Any] = [
+            "display_name": "Regular Speaker",
+            "status": "selected",
+            "supports_standby": false,
+            "control_key": "ctl-1"
+        ]
+        let nonStandby = SourceControl(from: nonStandbyDict)!
+
+        let standbyDict: [String: Any] = [
+            "display_name": "Power Source",
+            "status": "selected",
+            "supports_standby": true,
+            "control_key": "ctl-2"
+        ]
+        let standby = SourceControl(from: standbyDict)!
+
+        let output1 = Output(
+            id: "out-1",
+            zoneId: "zone-123",
+            displayName: "Output 1",
+            sourceControls: [nonStandby]
+        )
+
+        let output2 = Output(
+            id: "out-2",
+            zoneId: "zone-123",
+            displayName: "Output 2",
+            sourceControls: [standby]
+        )
+
+        let zone = Zone(
+            id: "zone-123",
+            displayName: "Living Room",
+            outputs: [output1, output2]
+        )
+
+        let result = zone.standbySourceControl
+
+        #expect(result != nil)
+        #expect(result?.outputId == "out-2")
+        #expect(result?.sourceControl.displayName == "Power Source")
+    }
+
+    @Test("Zone with empty outputs returns nil for standbySourceControl")
+    func standbySourceControlEmptyOutputs() {
+        let zone = Zone(
+            id: "zone-123",
+            displayName: "Living Room",
+            outputs: []
+        )
+
+        #expect(zone.standbySourceControl == nil)
+    }
 }
