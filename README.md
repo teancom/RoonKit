@@ -54,3 +54,8 @@ swift test
 ## Roon API Limitations
 
 Roon does **not** expose: audio EQ settings, balance control, bitrate/sample rate, mono/stereo info, queue reordering/removal (read-only), queue sorting, or playlist creation/management.
+
+## Acknowledgments
+
+- [Roon Labs](https://roonlabs.com/) for the Roon music system
+- Protocol details derived from [node-roon-api](https://github.com/RoonLabs/node-roon-api)
